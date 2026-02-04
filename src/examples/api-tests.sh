@@ -5,7 +5,22 @@
 
 set -e
 
-BASE_URL="http://localhost:5000"
+# Load port from .env file or use default
+if [ -f "../.env" ]; then
+    # Try to extract PORT from .env file
+    PORT=$(grep -E '^PORT=' ../.env | cut -d '=' -f2)
+    if [ -z "$PORT" ]; then
+        PORT=$(grep -E '^GEO_PORT=' ../.env | cut -d '=' -f2)
+    fi
+fi
+
+# Use default if not found
+PORT=${PORT:-5000}
+BASE_URL="http://localhost:$PORT"
+
+echo "Using server: $BASE_URL"
+
+# Initialize variables
 VERBOSE=false
 TEST_ALL=false
 
