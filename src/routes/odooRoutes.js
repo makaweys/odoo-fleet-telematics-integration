@@ -19,6 +19,8 @@ const odooService = require('../services/odooService');
  *   "traccarId": "traccar-001"
  * }
  */
+
+
 router.post('/vehicles/sync', async (req, res) => {
   try {
     console.log('Odoo vehicle sync request received:', {
