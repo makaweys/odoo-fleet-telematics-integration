@@ -344,3 +344,309 @@ exports.batchSyncPois = async (req, res) => {
     });
   }
 };
+
+/**
+ * Sync POI from Odoo customer (for customer creation/update automation)
+ * This endpoint matches exactly what your Odoo automation is calling
+ */
+exports.syncPoiFromOdooCustomer = async (req, res) => {
+  try {
+    const { odooCustomerId, name, route, latitude, longitude, address } = req.body;
+    
+    console.log('Syncing POI from Odoo customer:', {
+      odooCustomerId,
+      name,
+      route
+    });
+
+    // Validate required fields
+    if (!odooCustomerId || !name) {
+      return res.status(400).json({
+        success: false,
+        error: 'odooCustomerId and name are required'
+      });
+    }
+
+    // Validate coordinates
+    if (!latitude || !longitude) {
+      return res.status(400).json({
+        success: false,
+        error: 'latitude and longitude are required'
+      });
+    }
+
+    // Convert coordinates to numbers
+    const lat = parseFloat(latitude);
+    const lng = parseFloat(longitude);
+    
+    // Validate coordinate ranges
+    if (isNaN(lat) || lat < -90 || lat > 90) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid latitude. Must be between -90 and 90'
+      });
+    }
+    
+    if (isNaN(lng) || lng < -180 || lng > 180) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid longitude. Must be between -180 and 180'
+      });
+    }
+
+    let poi;
+    if (req.db.connected) {
+      // Check if POI already exists for this Odoo customer
+      poi = await Poi.findOne({ odooCustomerId });
+      
+      if (poi) {
+        // Update existing POI
+        poi.name = name;
+        poi.location = { lat, lng };
+        poi.description = route || address || poi.description;
+        poi.isCustomer = true;
+        poi.updatedOn = new Date();
+        
+        await poi.save();
+        
+        console.log(`Updated existing POI for Odoo customer ${odooCustomerId}`);
+      } else {
+        // Create new POI
+        poi = new Poi({
+          odooCustomerId,
+          name,
+          description: route || address || '',
+          location: { lat, lng },
+          radius: 100, // Default radius for customer locations
+          isCustomer: true,
+          updatedOn: new Date()
+        });
+        
+        await poi.save();
+        
+        console.log(`Created new POI for Odoo customer ${odooCustomerId}`);
+      }
+    } else {
+      // Dummy mode - create mock POI
+      poi = {
+        _id: `dummy_${odooCustomerId}`,
+        odooCustomerId,
+        name,
+        description: route || '',
+        location: { lat, lng },
+        radius: 100,
+        isCustomer: true,
+        updatedOn: new Date()
+      };
+      
+      console.log(`Dummy mode: Created POI for Odoo customer ${odooCustomerId}`);
+    }
+
+    // Refresh zone cache after POI update
+    if (req.io && req.db.connected) {
+      const { reloadZones } = require('../utils/zoneManager');
+      await reloadZones(req.db);
+      
+      // Emit socket event for real-time update
+      req.io.emit('poi:odoo:synced', {
+        poiId: poi._id,
+        odooCustomerId,
+        name,
+        location: { lat, lng },
+        timestamp: new Date()
+      });
+    }
+
+    res.json({
+      success: true,
+      message: poi._id?.toString().startsWith('dummy_') 
+        ? 'POI synced (dummy mode)' 
+        : 'POI synced successfully',
+      data: {
+        poiId: poi._id,
+        odooCustomerId: poi.odooCustomerId,
+        name: poi.name,
+        location: poi.location,
+        isCustomer: poi.isCustomer,
+        updatedOn: poi.updatedOn
+      }
+    });
+
+  } catch (error) {
+    console.error('Error syncing POI from Odoo customer:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to sync POI from Odoo customer',
+      ...(process.env.NODE_ENV === 'development' && { details: error.message })
+    });
+  }
+};
+
+/**
+ * Bulk sync POIs from Odoo customers (for initial migration or batch updates)
+ */
+exports.bulkSyncPoisFromOdoo = async (req, res) => {
+  try {
+    const { customers } = req.body;
+    
+    if (!Array.isArray(customers) || customers.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'customers array is required and cannot be empty'
+      });
+    }
+
+    const results = {
+      total: customers.length,
+      created: 0,
+      updated: 0,
+      errors: [],
+      skipped: 0
+    };
+
+    for (const customer of customers) {
+      try {
+        const { odooCustomerId, name, latitude, longitude, route, address } = customer;
+        
+        // Skip if missing required fields
+        if (!odooCustomerId || !name || !latitude || !longitude) {
+          results.errors.push({
+            customer,
+            error: 'Missing required fields (odooCustomerId, name, latitude, or longitude)'
+          });
+          results.skipped++;
+          continue;
+        }
+
+        // Validate coordinates
+        const lat = parseFloat(latitude);
+        const lng = parseFloat(longitude);
+        
+        if (isNaN(lat) || lat < -90 || lat > 90 || 
+            isNaN(lng) || lng < -180 || lng > 180) {
+          results.errors.push({
+            customer,
+            error: 'Invalid coordinates'
+          });
+          results.skipped++;
+          continue;
+        }
+
+        if (req.db.connected) {
+          // Find existing POI
+          let poi = await Poi.findOne({ odooCustomerId });
+          
+          if (poi) {
+            // Update existing
+            poi.name = name;
+            poi.location = { lat, lng };
+            poi.description = route || address || poi.description;
+            poi.isCustomer = true;
+            poi.updatedOn = new Date();
+            await poi.save();
+            results.updated++;
+          } else {
+            // Create new
+            poi = new Poi({
+              odooCustomerId,
+              name,
+              description: route || address || '',
+              location: { lat, lng },
+              radius: 100,
+              isCustomer: true,
+              updatedOn: new Date()
+            });
+            await poi.save();
+            results.created++;
+          }
+        } else {
+          // Dummy mode - just count
+          results.created++;
+        }
+        
+      } catch (error) {
+        results.errors.push({
+          customer,
+          error: error.message
+        });
+        results.skipped++;
+      }
+    }
+
+    // Refresh zone cache after bulk update
+    if (req.io && req.db.connected) {
+      const { reloadZones } = require('../utils/zoneManager');
+      await reloadZones(req.db);
+      
+      req.io.emit('pois:bulk:synced', {
+        total: results.total,
+        created: results.created,
+        updated: results.updated,
+        timestamp: new Date()
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Bulk sync completed: ${results.created} created, ${results.updated} updated, ${results.skipped} skipped`,
+      data: results
+    });
+
+  } catch (error) {
+    console.error('Error in bulk POI sync:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to bulk sync POIs'
+    });
+  }
+};
+
+/**
+ * Get POIs by Odoo customer IDs
+ */
+exports.getPoisByOdooCustomerIds = async (req, res) => {
+  try {
+    const { customerIds } = req.body;
+    
+    if (!Array.isArray(customerIds) || customerIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'customerIds array is required'
+      });
+    }
+
+    let pois = [];
+    if (req.db.connected) {
+      pois = await Poi.find({ 
+        odooCustomerId: { $in: customerIds } 
+      });
+    } else {
+      // Return dummy POIs
+      pois = customerIds.map(id => ({
+        _id: `dummy_${id}`,
+        odooCustomerId: id,
+        name: `Customer ${id}`,
+        location: { 
+          lat: -1.2921 + (Math.random() * 0.1 - 0.05),
+          lng: 36.8219 + (Math.random() * 0.1 - 0.05)
+        },
+        radius: 100,
+        isCustomer: true
+      }));
+    }
+
+    res.json({
+      success: true,
+      count: pois.length,
+      data: pois
+    });
+
+  } catch (error) {
+    console.error('Error getting POIs by Odoo customer IDs:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get POIs'
+    });
+  }
+};
+

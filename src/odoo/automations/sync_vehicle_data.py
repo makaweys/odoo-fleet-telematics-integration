@@ -14,7 +14,7 @@ payload = {
 }
 
 headers = {"Content-Type": "application/json"}
-api_url = "YOUR-NODE-{SERVER-IP:PORT|URL}/api/vehicles/odoo-sync"
+api_url = "http://YOUR-NODE-{SERVER-IP:PORT|URL}/api/vehicles/sync"
 
 try:
     response = requests.post(api_url, json=payload, headers=headers, timeout=5)
