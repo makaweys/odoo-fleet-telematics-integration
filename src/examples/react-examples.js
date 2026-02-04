@@ -2,9 +2,55 @@
 
 import axios from 'axios';
 
-// Configure axios instance
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+// Load configuration from environment or use defaults
+const getApiBaseUrl = () => {
+  // Check for React environment variable
+  if (process.env.REACT_APP_API_URL) {
+    return process.env.REACT_APP_API_URL;
+  }
+  
+  // Check for .env file in development
+  if (process.env.NODE_ENV === 'development') {
+    return process.env.REACT_APP_API_BASE || 'http://localhost:5000/api';
+  }
+  
+  // Production default
+  return '/api'; // Relative path for production
+};
 
+const getWebSocketUrl = () => {
+  // Check for WebSocket URL in environment variables
+  if (process.env.REACT_APP_WS_URL) {
+    return process.env.REACT_APP_WS_URL;
+  }
+  
+  // Try to construct from API URL
+  const apiUrl = getApiBaseUrl();
+  
+  if (apiUrl.startsWith('http://')) {
+    // Replace http:// with ws://
+    return apiUrl.replace('http://', 'ws://').replace('/api', '');
+  } else if (apiUrl.startsWith('https://')) {
+    // Replace https:// with wss://
+    return apiUrl.replace('https://', 'wss://').replace('/api', '');
+  } else if (apiUrl.startsWith('/api')) {
+    // Relative URL, use current host with ws
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    return `${protocol}//${host}`;
+  }
+  
+  // Default
+  return 'ws://localhost:5000';
+};
+
+const API_BASE = getApiBaseUrl();
+const WS_URL = getWebSocketUrl();
+
+console.log(`Using API base URL: ${API_BASE}`);
+console.log(`Using WebSocket URL: ${WS_URL}`);
+
+// Configure axios instance
 const api = axios.create({
   baseURL: API_BASE,
   timeout: 10000,
@@ -522,13 +568,17 @@ export const setupWebSocket = (options = {}) => {
     onZoneEvent,
     onViolation,
     onVehicleUpdate,
-    onPoiSynced
+    onPoiSynced,
+    onConnect,
+    onDisconnect,
+    onError
   } = options;
 
-  const socket = new WebSocket(`ws://localhost:5000`);
+  const socket = new WebSocket(WS_URL);
 
   socket.onopen = () => {
-    console.log('WebSocket connected');
+    console.log('WebSocket connected to:', WS_URL);
+    onConnect?.();
   };
 
   socket.onmessage = (event) => {
@@ -552,6 +602,8 @@ export const setupWebSocket = (options = {}) => {
           onVehicleUpdate?.(data);
           break;
         case 'poi:odoo:synced':
+        case 'poi:created':
+        case 'poi:updated':
           onPoiSynced?.(data);
           break;
         default:
@@ -564,25 +616,84 @@ export const setupWebSocket = (options = {}) => {
 
   socket.onerror = (error) => {
     console.error('WebSocket error:', error);
+    onError?.(error);
   };
 
-  socket.onclose = () => {
-    console.log('WebSocket disconnected');
+  socket.onclose = (event) => {
+    console.log('WebSocket disconnected:', event.code, event.reason);
+    onDisconnect?.(event);
   };
 
-  return socket;
+  // Helper methods
+  const sendMessage = (type, data) => {
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type, ...data }));
+      return true;
+    }
+    console.warn('WebSocket not connected');
+    return false;
+  };
+
+  const subscribeToVehicle = (vehicleId) => {
+    return sendMessage('subscribe', { channel: `vehicle:${vehicleId}` });
+  };
+
+  const unsubscribeFromVehicle = (vehicleId) => {
+    return sendMessage('unsubscribe', { channel: `vehicle:${vehicleId}` });
+  };
+
+  const subscribeToZone = (zoneId) => {
+    return sendMessage('subscribe', { channel: `zone:${zoneId}` });
+  };
+
+  const unsubscribeFromZone = (zoneId) => {
+    return sendMessage('unsubscribe', { channel: `zone:${zoneId}` });
+  };
+
+  return {
+    socket,
+    sendMessage,
+    subscribeToVehicle,
+    unsubscribeFromVehicle,
+    subscribeToZone,
+    unsubscribeFromZone,
+    close: () => socket.close(),
+    isConnected: () => socket.readyState === WebSocket.OPEN
+  };
 };
 
-// Example usage in React component:
+// ==================== Configuration Helper ====================
+export const config = {
+  getApiBaseUrl: () => API_BASE,
+  getWebSocketUrl: () => WS_URL,
+  
+  // Helper to load configuration from .env file or defaults
+  loadConfig: () => {
+    return {
+      apiBaseUrl: API_BASE,
+      webSocketUrl: WS_URL,
+      isProduction: process.env.NODE_ENV === 'production',
+      isDevelopment: process.env.NODE_ENV === 'development'
+    };
+  }
+};
+
+// Example React component usage:
 /*
 import React, { useEffect, useState } from 'react';
-import { vehicleApi, locationApi, setupWebSocket } from './react-examples';
+import { vehicleApi, locationApi, setupWebSocket, config } from './react-examples';
 
 function Dashboard() {
   const [vehicles, setVehicles] = useState([]);
   const [activeVehicles, setActiveVehicles] = useState([]);
+  const [wsConnection, setWsConnection] = useState(null);
 
   useEffect(() => {
+    // Load configuration
+    const { apiBaseUrl, webSocketUrl } = config.loadConfig();
+    console.log('Connected to:', apiBaseUrl);
+    console.log('WebSocket:', webSocketUrl);
+
     // Load vehicles
     vehicleApi.getVehicles().then(data => setVehicles(data.data));
     
@@ -590,17 +701,43 @@ function Dashboard() {
     locationApi.getActiveVehicles().then(data => setActiveVehicles(data.vehicles));
     
     // Setup WebSocket for real-time updates
-    const socket = setupWebSocket({
+    const ws = setupWebSocket({
       onLocationUpdate: (data) => {
         console.log('Location update:', data);
-        // Update your state
+        // Update your state with real-time data
+        setActiveVehicles(prev => {
+          const updated = [...prev];
+          const index = updated.findIndex(v => v.vehicleId === data.vehicleId);
+          if (index >= 0) {
+            updated[index] = { ...updated[index], ...data };
+          } else {
+            updated.push(data);
+          }
+          return updated;
+        });
       },
       onViolation: (data) => {
-        alert(`Violation: ${data.reason}`);
+        alert(`Violation detected: ${data.reason}`);
+        // Show notification in your UI
+      },
+      onConnect: () => {
+        console.log('Real-time updates connected');
+        // Subscribe to specific vehicles if needed
+        ws.subscribeToVehicle('vehicle_123');
+      },
+      onDisconnect: () => {
+        console.log('Real-time updates disconnected');
+        // Show reconnection message
       }
     });
     
-    return () => socket.close();
+    setWsConnection(ws);
+    
+    return () => {
+      if (ws) {
+        ws.close();
+      }
+    };
   }, []);
   
   return (
@@ -608,7 +745,16 @@ function Dashboard() {
       <h1>Vehicle Dashboard</h1>
       <p>Total vehicles: {vehicles.length}</p>
       <p>Active vehicles: {activeVehicles.length}</p>
+      <p>WebSocket: {wsConnection?.isConnected() ? 'Connected' : 'Disconnected'}</p>
     </div>
   );
 }
+
+// In your .env file for React:
+REACT_APP_API_URL=http://localhost:5000/api
+REACT_APP_WS_URL=ws://localhost:5000
+
+// Or for production:
+REACT_APP_API_URL=https://your-domain.com/api
+REACT_APP_WS_URL=wss://your-domain.com
 */
