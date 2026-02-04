@@ -49,46 +49,67 @@ const dummyPOIs = [
 /**
  * Load zones from database or use dummy data
  */
+// Update the loadZones function to work with the new structure
 async function loadZones(db) {
   try {
     if (db.connected) {
-      // Load from MongoDB
+      // Load from MongoDB using the new models
       const Geofence = require('../models/Geofence');
       const Poi = require('../models/Poi');
+      const Zone = require('../models/Zone');
       
-      const [geofences, pois] = await Promise.all([
-        Geofence.find({}).lean(),
-        Poi.find({}).lean()
-      ]);
+      // Get all zones with populated geofences and POIs
+      const zones = await Zone.find()
+        .populate('assignedGeofeatures.geofences')
+        .populate('assignedGeofeatures.pois');
+      
+      // Flatten all geofences and POIs from zones
+      const allGeofences = [];
+      const allPois = [];
+      
+      zones.forEach(zone => {
+        if (zone.assignedGeofeatures.geofences) {
+          allGeofences.push(...zone.assignedGeofeatures.geofences);
+        }
+        if (zone.assignedGeofeatures.pois) {
+          allPois.push(...zone.assignedGeofeatures.pois);
+        }
+      });
+      
+      // Remove duplicates
+      const uniqueGeofences = Array.from(new Map(allGeofences.map(g => [g._id.toString(), g])).values());
+      const uniquePois = Array.from(new Map(allPois.map(p => [p._id.toString(), p])).values());
       
       zonesCache = {
-        geofences,
-        pois,
+        zones,
+        geofences: uniqueGeofences,
+        pois: uniquePois,
         lastUpdated: new Date()
       };
       
-      console.log(`✅ Zones loaded from database: ${geofences.length} geofences, ${pois.length} POIs`);
+      console.log(`Zones loaded: ${zones.length} zones, ${uniqueGeofences.length} geofences, ${uniquePois.length} POIs`);
     } else {
-      // Use dummy data
+      // Use dummy data for testing
       zonesCache = {
+        zones: dummyZones,
         geofences: dummyGeofences,
         pois: dummyPOIs,
         lastUpdated: new Date()
       };
       
-      console.log('ℹ️  Using dummy zones for testing');
+      console.log('Using dummy zones for testing');
     }
   } catch (error) {
     console.error('Error loading zones:', error);
     // Fallback to dummy data
     zonesCache = {
+      zones: dummyZones,
       geofences: dummyGeofences,
       pois: dummyPOIs,
       lastUpdated: new Date()
     };
   }
 }
-
 /**
  * Get all zones
  */

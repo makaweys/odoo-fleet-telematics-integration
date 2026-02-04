@@ -52,6 +52,15 @@ app.use('/api/vehicles', require('./routes/vehicleRoutes'));
 app.use('/api/violations', require('./routes/violationRoutes'));
 app.use('/api/location', require('./routes/locationRoutes'));
 
+// Geofence management routes (for React frontend)
+app.use('/api/geofences', require('./routes/geofenceRoutes'));
+
+// POI management routes (for React frontend)
+app.use('/api/pois', require('./routes/poiRoutes'));
+
+// Zone management routes (for React frontend)
+app.use('/api/zones', require('./routes/zoneRoutes'));
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ 
