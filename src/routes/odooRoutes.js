@@ -223,9 +223,29 @@ router.get('/trips/vehicle/:vehicleId/active', async (req, res) => {
 });
 
 /**
+ * @route POST /api/odoo/customers/sync-poi
+ * @desc Sync customer POI from Odoo - uses poiController directly
+ * @access Public
+ */
+router.post('/customers/sync-poi', syncPoiFromOdooCustomer);
+
+/**
+ * @route POST /api/odoo/customers/bulk-sync-pois
+ * @desc Bulk sync customer POIs from Odoo - uses poiController directly
+ * @access Public
+ */
+router.post('/customers/bulk-sync-pois', bulkSyncPoisFromOdoo);
+
+/**
+ * @route POST /api/odoo/customers/get-pois
+ * @desc Get POIs by Odoo customer IDs - uses poiController directly
+ * @access Public
+ */
+router.post('/customers/get-pois', getPoisByOdooCustomerIds);
+
+/**
  * @route GET /api/odoo/test
  * @desc Test endpoint for Odoo integration
- * @access Public
  */
 router.get('/test', (req, res) => {
   res.json({
@@ -247,42 +267,25 @@ router.get('/test', (req, res) => {
         url: '/api/odoo/trips/complete',
         description: 'Complete a trip'
       },
+      customerPoiSync: {
+        method: 'POST',
+        url: '/api/odoo/customers/sync-poi',
+        description: 'Sync customer POI from Odoo (uses poiController)'
+      },
+      customerBulkSync: {
+        method: 'POST',
+        url: '/api/odoo/customers/bulk-sync-pois',
+        description: 'Bulk sync customer POIs from Odoo (uses poiController)'
+      },
+      getCustomerPois: {
+        method: 'POST',
+        url: '/api/odoo/customers/get-pois',
+        description: 'Get POIs by Odoo customer IDs (uses poiController)'
+      },
       activeTrips: {
         method: 'GET',
         url: '/api/odoo/trips/active',
         description: 'Get all active trips'
-      }
-    },
-    sampleRequests: {
-      vehicleSync: {
-        odooVehicleId: 123,
-        name: "Delivery Truck 1",
-        licensePlate: "KAA-123A",
-        type: "Isuzu NQR",
-        driverName: "John Doe",
-        driverId: 456,
-        deviceId: "device_001",
-        traccarId: "traccar_001"
-      },
-      tripAssign: {
-        odooVehicleId: 123,
-        odooCustomerIds: [789, 790],
-        zoneId: "67890abcdef",
-        x_studio_trip_id: 999,
-        invoices_count: 2,
-        total_value: 1500.50,
-        invoices: [
-          {
-            partner_id: 789,
-            partner_name: "Customer A",
-            amount_total: 750.25
-          },
-          {
-            partner_id: 790,
-            partner_name: "Customer B",
-            amount_total: 750.25
-          }
-        ]
       }
     }
   });
