@@ -31,7 +31,7 @@ if latitude and longitude and is_valid_latitude(latitude) and is_valid_longitude
     }
     
     headers = {"Content-Type": "application/json"}
-    api_url = "http://YOUR-SERVER_URL/api/pois/odoo-customer-poi-sync"
+    api_url = "http://YOUR-SERVER_URL/api/odoo/customers/sync-poi"
     
     try:
         response = requests.post(api_url, json=payload, headers=headers, timeout=10)
