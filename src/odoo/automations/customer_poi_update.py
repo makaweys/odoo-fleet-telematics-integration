@@ -2,7 +2,6 @@ latitude = record.x_studio_latitude
 longitude = record.x_studio_longitude
 
 customer = record
-
 def is_valid_latitude(lat):
     """Check if latitude is valid (-90 to 90 degrees)"""
     try:
