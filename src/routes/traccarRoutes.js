@@ -37,6 +37,8 @@ router.post('/location', async (req, res) => {
       ip: req.ip
     });
 
+    console.log('Traccar location update received:', req.body.device_id ,req.ip);
+
     // Process the location update
     const result = await traccarLocationService.processTraccarLocation(
       req.body,

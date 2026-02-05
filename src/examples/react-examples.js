@@ -561,6 +561,293 @@ export const zoneApi = {
   },
 };
 
+// ==================== Simulator API ====================
+export const simulatorApi = {
+  /**
+   * Get simulator status
+   */
+  getStatus: async () => {
+    try {
+      const response = await api.get('/simulator/status');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching simulator status:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get all simulated vehicles
+   */
+  getSimulatedVehicles: async () => {
+    try {
+      const response = await api.get('/simulator/vehicles');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching simulated vehicles:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Start the simulator
+   */
+  startSimulator: async () => {
+    try {
+      const response = await api.post('/simulator/control', { action: 'start' });
+      return response.data;
+    } catch (error) {
+      console.error('Error starting simulator:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Stop the simulator
+   */
+  stopSimulator: async () => {
+    try {
+      const response = await api.post('/simulator/control', { action: 'stop' });
+      return response.data;
+    } catch (error) {
+      console.error('Error stopping simulator:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Restart the simulator
+   */
+  restartSimulator: async () => {
+    try {
+      const response = await api.post('/simulator/control', { action: 'restart' });
+      return response.data;
+    } catch (error) {
+      console.error('Error restarting simulator:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Trigger manual location updates
+   */
+  triggerLocationUpdates: async () => {
+    try {
+      const response = await api.post('/simulator/update-locations');
+      return response.data;
+    } catch (error) {
+      console.error('Error triggering location updates:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Add a new simulated vehicle
+   */
+  addSimulatedVehicle: async (vehicleData) => {
+    try {
+      const response = await api.post('/simulator/vehicles', vehicleData);
+      return response.data;
+    } catch (error) {
+      console.error('Error adding simulated vehicle:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Control a specific simulated vehicle
+   */
+  controlVehicle: async (vehicleId, command) => {
+    try {
+      const response = await api.post(`/simulator/vehicles/${vehicleId}/control`, command);
+      return response.data;
+    } catch (error) {
+      console.error('Error controlling vehicle:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Update simulator settings
+   */
+  updateSettings: async (settings) => {
+    try {
+      const response = await api.put('/simulator/settings', settings);
+      return response.data;
+    } catch (error) {
+      console.error('Error updating simulator settings:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get vehicle location history
+   */
+  getVehicleHistory: async (vehicleId, limit = 20) => {
+    try {
+      const response = await api.get(`/simulator/vehicles/${vehicleId}/history?limit=${limit}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching vehicle history:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Create a test vehicle for simulation
+   */
+  createTestVehicle: async (name = 'Test Vehicle', type = 'car') => {
+    const testVehicle = {
+      name,
+      deviceId: `TEST_${Date.now()}`,
+      plateNumber: `TEST-${Math.floor(Math.random() * 1000)}`,
+      type,
+      driver: {
+        name: 'Test Driver',
+        phone: '+254700000000'
+      },
+      company: 'Test Company',
+      lat: -1.2921,
+      lng: 36.8219
+    };
+    
+    return simulatorApi.addSimulatedVehicle(testVehicle);
+  },
+
+  /**
+   * Run a complete test sequence
+   */
+  runTestSequence: async () => {
+    console.log('Starting simulator test sequence...');
+    
+    try {
+      // 1. Start simulator
+      const startResult = await simulatorApi.startSimulator();
+      console.log('Simulator started:', startResult);
+      
+      // Wait for initialization
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // 2. Get simulator status
+      const status = await simulatorApi.getStatus();
+      console.log('Simulator status:', status);
+      
+      // 3. Get simulated vehicles
+      const vehicles = await simulatorApi.getSimulatedVehicles();
+      console.log('Simulated vehicles:', vehicles.count);
+      
+      // 4. Trigger manual location update
+      const locationResult = await simulatorApi.triggerLocationUpdates();
+      console.log('Location updates triggered:', locationResult);
+      
+      // 5. Create a test vehicle
+      const testVehicle = await simulatorApi.createTestVehicle();
+      console.log('Test vehicle created:', testVehicle);
+      
+      // 6. Control the test vehicle
+      if (testVehicle.success && testVehicle.vehicle) {
+        const controlResult = await simulatorApi.controlVehicle(testVehicle.vehicle._id, {
+          action: 'set_status',
+          status: 'active'
+        });
+        console.log('Vehicle controlled:', controlResult);
+      }
+      
+      // 7. Update simulator settings
+      const settingsResult = await simulatorApi.updateSettings({
+        updateInterval: 15000 // 15 seconds
+      });
+      console.log('Settings updated:', settingsResult);
+      
+      return {
+        success: true,
+        steps: {
+          start: startResult,
+          status,
+          vehicles,
+          locationUpdate: locationResult,
+          testVehicle,
+          settings: settingsResult
+        },
+        message: 'Simulator test sequence completed successfully'
+      };
+      
+    } catch (error) {
+      console.error('Simulator test sequence failed:', error);
+      return {
+        success: false,
+        error: error.message,
+        message: 'Simulator test sequence failed'
+      };
+    }
+  }
+};
+
+// ==================== Health & Stats API ====================
+export const healthApi = {
+  /**
+   * Get server health status
+   */
+  getHealth: async () => {
+    try {
+      const response = await api.get('/health');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching health status:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get socket connection statistics
+   */
+  getSocketStats: async () => {
+    try {
+      const response = await api.get('/socket/stats');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching socket stats:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get zone statistics
+   */
+  getZoneStats: async () => {
+    try {
+      const response = await api.get('/zones/stats');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching zone stats:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get system status summary
+   */
+  getSystemStatus: async () => {
+    try {
+      const [health, socketStats, zoneStats] = await Promise.all([
+        healthApi.getHealth(),
+        healthApi.getSocketStats(),
+        healthApi.getZoneStats()
+      ]);
+      
+      return {
+        server: health,
+        sockets: socketStats,
+        zones: zoneStats,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Error fetching system status:', error);
+      throw error;
+    }
+  }
+};
+
 // ==================== WebSocket Setup ====================
 export const setupWebSocket = (options = {}) => {
   const {
@@ -571,7 +858,9 @@ export const setupWebSocket = (options = {}) => {
     onPoiSynced,
     onConnect,
     onDisconnect,
-    onError
+    onError,
+    onSimulatorStatus,
+    onAdminAlert
   } = options;
 
   const socket = new WebSocket(WS_URL);
@@ -595,6 +884,7 @@ export const setupWebSocket = (options = {}) => {
           onZoneEvent?.(data);
           break;
         case 'violation:detected':
+        case 'violation:alert':
           onViolation?.(data);
           break;
         case 'vehicle:update':
@@ -605,6 +895,15 @@ export const setupWebSocket = (options = {}) => {
         case 'poi:created':
         case 'poi:updated':
           onPoiSynced?.(data);
+          break;
+        case 'simulator:status':
+        case 'simulator:started':
+        case 'simulator:stopped':
+          onSimulatorStatus?.(data);
+          break;
+        case 'admin:alert':
+        case 'system:message':
+          onAdminAlert?.(data);
           break;
         default:
           console.log('Unknown WebSocket event:', data);
@@ -650,6 +949,22 @@ export const setupWebSocket = (options = {}) => {
     return sendMessage('unsubscribe', { channel: `zone:${zoneId}` });
   };
 
+  const subscribeToSimulator = () => {
+    return sendMessage('subscribe', { channel: 'simulator:updates' });
+  };
+
+  const unsubscribeFromSimulator = () => {
+    return sendMessage('unsubscribe', { channel: 'simulator:updates' });
+  };
+
+  const subscribeToViolations = () => {
+    return sendMessage('subscribe', { channel: 'violations:alerts' });
+  };
+
+  const unsubscribeFromViolations = () => {
+    return sendMessage('unsubscribe', { channel: 'violations:alerts' });
+  };
+
   return {
     socket,
     sendMessage,
@@ -657,6 +972,10 @@ export const setupWebSocket = (options = {}) => {
     unsubscribeFromVehicle,
     subscribeToZone,
     unsubscribeFromZone,
+    subscribeToSimulator,
+    unsubscribeFromSimulator,
+    subscribeToViolations,
+    unsubscribeFromViolations,
     close: () => socket.close(),
     isConnected: () => socket.readyState === WebSocket.OPEN
   };
@@ -678,14 +997,29 @@ export const config = {
   }
 };
 
-// Example React component usage:
+// Export all APIs
+export default {
+  vehicleApi,
+  locationApi,
+  odooApi,
+  geofenceApi,
+  poiApi,
+  zoneApi,
+  simulatorApi,
+  healthApi,
+  setupWebSocket,
+  config,
+  api // Raw axios instance for custom requests
+};
+
+// Example React component usage with simulator:
 /*
 import React, { useEffect, useState } from 'react';
-import { vehicleApi, locationApi, setupWebSocket, config } from './react-examples';
+import { vehicleApi, simulatorApi, setupWebSocket, config } from './react-examples';
 
 function Dashboard() {
   const [vehicles, setVehicles] = useState([]);
-  const [activeVehicles, setActiveVehicles] = useState([]);
+  const [simulatorStatus, setSimulatorStatus] = useState(null);
   const [wsConnection, setWsConnection] = useState(null);
 
   useEffect(() => {
@@ -697,15 +1031,15 @@ function Dashboard() {
     // Load vehicles
     vehicleApi.getVehicles().then(data => setVehicles(data.data));
     
-    // Load active vehicles
-    locationApi.getActiveVehicles().then(data => setActiveVehicles(data.vehicles));
+    // Load simulator status
+    simulatorApi.getStatus().then(status => setSimulatorStatus(status));
     
     // Setup WebSocket for real-time updates
     const ws = setupWebSocket({
       onLocationUpdate: (data) => {
         console.log('Location update:', data);
         // Update your state with real-time data
-        setActiveVehicles(prev => {
+        setVehicles(prev => {
           const updated = [...prev];
           const index = updated.findIndex(v => v.vehicleId === data.vehicleId);
           if (index >= 0) {
@@ -720,10 +1054,15 @@ function Dashboard() {
         alert(`Violation detected: ${data.reason}`);
         // Show notification in your UI
       },
+      onSimulatorStatus: (data) => {
+        console.log('Simulator status update:', data);
+        setSimulatorStatus(prev => ({ ...prev, ...data }));
+      },
       onConnect: () => {
         console.log('Real-time updates connected');
-        // Subscribe to specific vehicles if needed
-        ws.subscribeToVehicle('vehicle_123');
+        // Subscribe to simulator updates
+        ws.subscribeToSimulator();
+        ws.subscribeToViolations();
       },
       onDisconnect: () => {
         console.log('Real-time updates disconnected');
@@ -740,12 +1079,162 @@ function Dashboard() {
     };
   }, []);
   
+  const handleStartSimulator = async () => {
+    try {
+      const result = await simulatorApi.startSimulator();
+      console.log('Simulator started:', result);
+      setSimulatorStatus(result.status);
+    } catch (error) {
+      console.error('Failed to start simulator:', error);
+    }
+  };
+  
+  const handleRunTestSequence = async () => {
+    const result = await simulatorApi.runTestSequence();
+    console.log('Test sequence result:', result);
+    if (result.success) {
+      alert('Simulator test completed successfully!');
+    } else {
+      alert('Simulator test failed: ' + result.error);
+    }
+  };
+  
   return (
     <div>
-      <h1>Vehicle Dashboard</h1>
-      <p>Total vehicles: {vehicles.length}</p>
-      <p>Active vehicles: {activeVehicles.length}</p>
-      <p>WebSocket: {wsConnection?.isConnected() ? 'Connected' : 'Disconnected'}</p>
+      <h1>Vehicle Telematics Dashboard</h1>
+      
+      <div className="status-panel">
+        <h2>System Status</h2>
+        <p>Total vehicles: {vehicles.length}</p>
+        <p>WebSocket: {wsConnection?.isConnected() ? 'Connected' : 'Disconnected'}</p>
+        <p>Simulator: {simulatorStatus?.isRunning ? 'Running' : 'Stopped'}</p>
+        {simulatorStatus && (
+          <div>
+            <p>Update interval: {simulatorStatus.updateInterval / 1000}s</p>
+            <p>Requests: {simulatorStatus.requestCount}</p>
+            <p>Errors: {simulatorStatus.errorCount}</p>
+          </div>
+        )}
+      </div>
+      
+      <div className="simulator-controls">
+        <h2>Simulator Controls</h2>
+        <button onClick={handleStartSimulator}>
+          Start Simulator
+        </button>
+        <button onClick={() => simulatorApi.stopSimulator()}>
+          Stop Simulator
+        </button>
+        <button onClick={handleRunTestSequence}>
+          Run Test Sequence
+        </button>
+        <button onClick={() => simulatorApi.triggerLocationUpdates()}>
+          Trigger Location Update
+        </button>
+      </div>
+      
+      <div className="vehicles-list">
+        <h2>Vehicles</h2>
+        {vehicles.map(vehicle => (
+          <div key={vehicle._id} className="vehicle-card">
+            <h3>{vehicle.name}</h3>
+            <p>Plate: {vehicle.licensePlate}</p>
+            <p>Status: {vehicle.status}</p>
+            {vehicle.lastLocation && (
+              <p>
+                Location: {vehicle.lastLocation.latitude.toFixed(6)}, 
+                {vehicle.lastLocation.longitude.toFixed(6)}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Simulator development panel component:
+function SimulatorDevPanel() {
+  const [simulatedVehicles, setSimulatedVehicles] = useState([]);
+  const [isSimulatorRunning, setIsSimulatorRunning] = useState(false);
+  
+  useEffect(() => {
+    // Load simulated vehicles
+    simulatorApi.getSimulatedVehicles().then(data => {
+      setSimulatedVehicles(data.vehicles || []);
+    });
+    
+    // Check simulator status
+    simulatorApi.getStatus().then(status => {
+      setIsSimulatorRunning(status.isRunning || status.running);
+    });
+  }, []);
+  
+  const handleAddTestVehicle = async () => {
+    const result = await simulatorApi.createTestVehicle(
+      `Test Vehicle ${simulatedVehicles.length + 1}`,
+      'truck'
+    );
+    
+    if (result.success) {
+      // Refresh vehicle list
+      const vehicles = await simulatorApi.getSimulatedVehicles();
+      setSimulatedVehicles(vehicles.vehicles || []);
+    }
+  };
+  
+  const handleControlVehicle = async (vehicleId, command) => {
+    const result = await simulatorApi.controlVehicle(vehicleId, command);
+    console.log('Control result:', result);
+    
+    // Refresh vehicle list
+    const vehicles = await simulatorApi.getSimulatedVehicles();
+    setSimulatedVehicles(vehicles.vehicles || []);
+  };
+  
+  return (
+    <div className="simulator-dev-panel">
+      <h3>Simulator Development Panel</h3>
+      
+      <div className="controls">
+        <button onClick={() => isSimulatorRunning ? 
+          simulatorApi.stopSimulator() : simulatorApi.startSimulator()}>
+          {isSimulatorRunning ? 'Stop' : 'Start'} Simulator
+        </button>
+        <button onClick={handleAddTestVehicle}>
+          Add Test Vehicle
+        </button>
+        <button onClick={() => simulatorApi.triggerLocationUpdates()}>
+          Send Location Updates
+        </button>
+      </div>
+      
+      <div className="simulated-vehicles">
+        <h4>Simulated Vehicles ({simulatedVehicles.length})</h4>
+        {simulatedVehicles.map(vehicle => (
+          <div key={vehicle.id} className="sim-vehicle">
+            <strong>{vehicle.name}</strong> ({vehicle.deviceId})
+            <div>
+              Status: 
+              <select 
+                value={vehicle.status}
+                onChange={(e) => handleControlVehicle(vehicle.id, {
+                  action: 'set_status',
+                  status: e.target.value
+                })}
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="offline">Offline</option>
+              </select>
+            </div>
+            <div>
+              Location: {vehicle.currentLocation?.lat?.toFixed(6)}, 
+              {vehicle.currentLocation?.lng?.toFixed(6)}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
