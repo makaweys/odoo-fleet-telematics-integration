@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Comprehensive API Test Suite - Vehicle Telematics Tracker
-# Run with options: ./api-tests.sh [--all|--vehicles|--location|--odoo|--geofences|--pois|--zones] [--verbose]
+# Run with options: ./api-tests.sh [--all|--vehicles|--location|--odoo|--geofences|--pois|--zones|--simulator] [--verbose]
 
 set -e
 
@@ -41,6 +41,7 @@ for arg in "$@"; do
         --geofences) TEST_GEOFENCES=true ;;
         --pois) TEST_POIS=true ;;
         --zones) TEST_ZONES=true ;;
+        --simulator) TEST_SIMULATOR=true ;;
         --verbose) VERBOSE=true ;;
         --port=*)
             PORT="${arg#*=}"
@@ -61,6 +62,7 @@ for arg in "$@"; do
             echo "  --geofences     Test geofence APIs"
             echo "  --pois          Test POI APIs"
             echo "  --zones         Test zone APIs"
+            echo "  --simulator     Test simulator control APIs"
             echo "  --verbose       Show detailed output"
             echo "  --port=NUMBER   Use specific port (default: 5000 or from .env)"
             echo "  --url=URL       Use specific base URL"
@@ -79,7 +81,8 @@ echo ""
 
 # If no specific test selected, run all
 if [ "$TEST_ALL" = false ] && [ -z "$TEST_VEHICLES" ] && [ -z "$TEST_LOCATION" ] && \
-   [ -z "$TEST_ODOO" ] && [ -z "$TEST_GEOFENCES" ] && [ -z "$TEST_POIS" ] && [ -z "$TEST_ZONES" ]; then
+   [ -z "$TEST_ODOO" ] && [ -z "$TEST_GEOFENCES" ] && [ -z "$TEST_POIS" ] && \
+   [ -z "$TEST_ZONES" ] && [ -z "$TEST_SIMULATOR" ]; then
     TEST_ALL=true
 fi
 
@@ -124,9 +127,17 @@ test_endpoint() {
         response=$(curl -s -X "$method" "$url" 2>/dev/null || echo '{"success":false,"error":"curl failed"}')
     fi
     
+    # Check for success in various formats
     local success=$(echo "$response" | grep -o '"success":[ ]*true' || true)
+    local is_running=$(echo "$response" | grep -o '"isRunning":[ ]*true' || true)
+    local running=$(echo "$response" | grep -o '"running":[ ]*true' || true)
     
-    if [ -n "$success" ]; then
+    if [ -n "$success" ] || [ -n "$is_running" ] || [ -n "$running" ] || \
+       echo "$response" | grep -q '"status":"ok"' || \
+       echo "$response" | grep -q '"vehicles":' || \
+       echo "$response" | grep -q '"zones":' || \
+       echo "$response" | grep -q '"geofences":' || \
+       echo "$response" | grep -q '"pois":'; then
         print_success "$description"
         if [ "$VERBOSE" = true ]; then
             echo -e "${BLUE}Response:${NC}"
@@ -152,6 +163,8 @@ TEST_TRIP_ID=77777
 # Health Check
 print_header "1. SERVER HEALTH"
 test_endpoint "GET" "$BASE_URL/health" "" "Server health check"
+test_endpoint "GET" "$API_URL/socket/stats" "" "Socket.io connection statistics"
+test_endpoint "GET" "$API_URL/zones/stats" "" "Zone statistics"
 
 if [ "$TEST_ALL" = true ] || [ -n "$TEST_VEHICLES" ]; then
     print_header "2. VEHICLE API TESTS"
@@ -240,8 +253,13 @@ if [ "$TEST_ALL" = true ] || [ -n "$TEST_LOCATION" ]; then
     
     # Send location update
     test_endpoint "POST" "$API_URL/traccar/location" \
-        "{\"device_id\":\"test_device_$TEST_VEHICLE_ID\",\"location\":{\"coords\":{\"latitude\":-1.2921,\"longitude\":36.8219,\"speed\":45},\"is_moving\":true,\"timestamp\":\"$TEST_TIMESTAMP\"}}" \
+        "{\"device_id\":\"test_device_$TEST_VEHICLE_ID\",\"location\":{\"coords\":{\"latitude\":-1.2921,\"longitude\":36.8219,\"speed\":45,\"accuracy\":15},\"is_moving\":true,\"timestamp\":\"$TEST_TIMESTAMP\"}}" \
         "Send location update"
+    
+    # Send location update with full data
+    test_endpoint "POST" "$API_URL/traccar/location" \
+        "{\"device_id\":\"T001\",\"deviceToken\":\"device_token_001\",\"location\":{\"coords\":{\"latitude\":-1.2921,\"longitude\":36.8219,\"speed\":60,\"heading\":45,\"accuracy\":10,\"altitude\":1122},\"battery\":{\"level\":0.75,\"is_charging\":false},\"odometer\":123456,\"timestamp\":\"$TEST_TIMESTAMP\",\"is_moving\":true}}" \
+        "Send detailed location update"
     
     # Get active vehicles from Traccar
     test_endpoint "GET" "$API_URL/traccar/vehicles/active" "" "Get active vehicles (Traccar)"
@@ -250,8 +268,60 @@ if [ "$TEST_ALL" = true ] || [ -n "$TEST_LOCATION" ]; then
     test_endpoint "GET" "$API_URL/traccar/vehicles/test_device_$TEST_VEHICLE_ID/status" "" "Get vehicle status"
 fi
 
+if [ "$TEST_ALL" = true ] || [ -n "$TEST_SIMULATOR" ]; then
+    print_header "8. SIMULATOR CONTROL API TESTS"
+    
+    # Get simulator status
+    test_endpoint "GET" "$API_URL/simulator/status" "" "Get simulator status"
+    
+    # Get simulated vehicles
+    test_endpoint "GET" "$API_URL/simulator/vehicles" "" "Get simulated vehicles"
+    
+    # Start simulator
+    test_endpoint "POST" "$API_URL/simulator/control" \
+        "{\"action\":\"start\"}" \
+        "Start vehicle simulator"
+    
+    # Wait a moment for simulator to start
+    sleep 2
+    
+    # Get updated simulator status
+    test_endpoint "GET" "$API_URL/simulator/status" "" "Get simulator status (after start)"
+    
+    # Trigger manual location update
+    test_endpoint "POST" "$API_URL/simulator/update-locations" \
+        "" \
+        "Trigger manual location updates"
+    
+    # Add a new simulated vehicle
+    test_endpoint "POST" "$API_URL/simulator/vehicles" \
+        "{\"name\":\"API Test Vehicle\",\"deviceId\":\"TEST_API_001\",\"plateNumber\":\"TEST-API-001\",\"type\":\"van\",\"driver\":{\"name\":\"API Tester\",\"phone\":\"+254700123456\"}}" \
+        "Add new simulated vehicle"
+    
+    # Get vehicles again to see the new one
+    test_endpoint "GET" "$API_URL/simulator/vehicles" "" "Get simulated vehicles (after add)"
+    
+    # Control a specific vehicle
+    test_endpoint "POST" "$API_URL/simulator/vehicles/sim_$(date +%s)/control" \
+        "{\"action\":\"set_status\",\"status\":\"active\"}" \
+        "Control simulated vehicle status"
+    
+    # Update simulator settings
+    test_endpoint "PUT" "$API_URL/simulator/settings" \
+        "{\"updateInterval\":15000}" \
+        "Update simulator settings"
+    
+    # Stop simulator
+    test_endpoint "POST" "$API_URL/simulator/control" \
+        "{\"action\":\"stop\"}" \
+        "Stop vehicle simulator"
+    
+    # Get final simulator status
+    test_endpoint "GET" "$API_URL/simulator/status" "" "Get simulator status (after stop)"
+fi
+
 print_header "TEST SUMMARY"
-echo -e "${GREEN} All selected tests completed!${NC}"
+echo -e "${GREEN}All selected tests completed!${NC}"
 echo ""
 echo -e "${BLUE}Test Data Created:${NC}"
 echo "- Test Vehicle ID: $TEST_VEHICLE_ID"
@@ -266,6 +336,24 @@ echo "./api-tests.sh --odoo        # Test Odoo integration"
 echo "./api-tests.sh --geofences   # Test geofence APIs"
 echo "./api-tests.sh --pois        # Test POI APIs"
 echo "./api-tests.sh --zones       # Test zone APIs"
+echo "./api-tests.sh --simulator   # Test simulator control APIs"
 echo "./api-tests.sh --port=4308   # Test on port 4308"
 echo "./api-tests.sh --verbose     # Show detailed output"
 echo "===================================="
+
+# Print additional notes
+echo ""
+echo -e "${CYAN}Note:${NC} The simulator APIs are only available in development mode."
+echo "Make sure your server is running in development mode (NODE_ENV=development)."
+echo ""
+echo -e "${CYAN}Testing Simulator:${NC}"
+echo "1. First, test that the simulator is accessible:"
+echo "   curl $API_URL/simulator/status"
+echo ""
+echo "2. Start the simulator:"
+echo "   curl -X POST $API_URL/simulator/control \\"
+echo "     -H \"Content-Type: application/json\" \\"
+echo "     -d '{\"action\":\"start\"}'"
+echo ""
+echo "3. Monitor location updates in your server logs or dashboard."
+echo "4. Use the simulator to test real-time features without real GPS devices."

@@ -1,6 +1,6 @@
 // jobs/vehicleSimulator.js - Vehicle telematics simulator
-const { getIO } = require('../lib/socket');
-const { getZones, checkLocation } = require('../utils/zoneManager');
+const { getIO } = require('../../lib/socket');
+const { getZones, checkLocation } = require('../../utils/zoneManager');
 
 // Simulated vehicle database
 const simulatedVehicles = [

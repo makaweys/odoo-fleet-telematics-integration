@@ -76,10 +76,22 @@ app.get('/api/socket/stats', (req, res) => {
   }
 });
 
-// In your app.js, add simulator routes (development only)
+//Simulator routes (development only)
 if (process.env.NODE_ENV === 'development') {
   app.use('/api/simulator', require('./routes/simulatorRoutes'));
-  console.log('Simulator routes enabled (development mode)');
+  console.log('Simulator control routes enabled (development mode)');
+}
+
+// Start simulator in development
+if (process.env.NODE_ENV === 'development') {
+  try {
+    const { startSimulator } = require('./jobs/vehicleSimulator');
+    startSimulator();
+    console.log('Traccar-compatible vehicle simulator started in development mode');
+    console.log('Simulator will send location data to: /api/traccar/location');
+  } catch (error) {
+    console.error('Error starting vehicle simulator:', error.message);
+  }
 }
 
 // Zone statistics endpoint
@@ -165,7 +177,7 @@ server.listen(PORT, () => {
 // Start simulator in development
 if (process.env.NODE_ENV === 'development') {
   try {
-    const { startSimulator } = require('./jobs/vehicleSimulator-with-ioevents');
+    const { startSimulator } = require('./jobs/archive/vehicleSimulator-with-ioevents');
     startSimulator(io);
     console.log('Vehicle simulator started in development mode');
   } catch (error) {

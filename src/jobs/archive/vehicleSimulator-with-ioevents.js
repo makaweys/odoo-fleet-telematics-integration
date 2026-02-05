@@ -1,6 +1,6 @@
 // jobs/vehicleSimulator.js - Traccar-compatible vehicle simulator
 const axios = require('axios');
-const { getIO } = require('../lib/socket');
+const { getIO } = require('../../lib/socket');
 
 // Traccar-compatible polygon area (your existing polygon)
 const OPERATIONAL_POLYGON = [

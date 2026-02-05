@@ -1,75 +1,102 @@
-// routes/simulatorRoutes.js - Routes to control the vehicle simulator
+// routes/simulatorRoutes.js - Control the Traccar simulator (API-only version)
 const express = require('express');
 const router = express.Router();
-const { getSimulator } = require('../jobs/vehicleSimulator-with-ioevents');
+const { getSimulator } = require('../jobs/vehicleSimulator');
 
-// Middleware to ensure simulator is available
-const requireSimulator = (req, res, next) => {
+// Get simulator status
+router.get('/status', (req, res) => {
   const simulator = getSimulator();
+  
   if (!simulator) {
-    return res.status(400).json({ 
+    return res.json({
+      running: false,
+      message: 'Simulator not initialized'
+    });
+  }
+  
+  res.json(simulator.getStatus());
+});
+
+// Get all simulated vehicles
+router.get('/vehicles', (req, res) => {
+  const simulator = getSimulator();
+  
+  if (!simulator) {
+    return res.status(400).json({
       error: 'Simulator not running',
       message: 'Start the simulator in development mode first'
     });
   }
-  next();
-};
-
-// Get simulator status
-router.get('/status', requireSimulator, (req, res) => {
-  const simulator = getSimulator();
-  const vehicles = simulator.getSimulatedVehicles();
   
   res.json({
-    running: true,
-    vehicleCount: vehicles.length,
-    onlineVehicles: vehicles.filter(v => v.isOnline).length,
-    lastUpdate: new Date(),
-    updateInterval: simulator.updateInterval
+    vehicles: simulator.getVehicles(),
+    count: simulator.getVehicles().length
   });
 });
 
-// Get all simulated vehicles
-router.get('/vehicles', requireSimulator, (req, res) => {
+// Control simulator
+router.post('/control', (req, res) => {
   const simulator = getSimulator();
-  const vehicles = simulator.getSimulatedVehicles();
+  const { action } = req.body;
   
-  res.json({
-    vehicles: vehicles.map(v => ({
-      id: v.id,
-      name: v.name,
-      type: v.type,
-      status: v.status,
-      isOnline: v.isOnline,
-      driver: v.driver,
-      company: v.company,
-      currentLocation: v.currentLocation,
-      icon: v.icon,
-      color: v.color
-    })),
-    count: vehicles.length
-  });
+  if (!simulator) {
+    return res.status(400).json({
+      error: 'Simulator not initialized',
+      message: 'Simulator must be initialized first'
+    });
+  }
+  
+  switch (action) {
+    case 'start':
+      simulator.start();
+      res.json({ 
+        success: true, 
+        message: 'Simulator started', 
+        status: simulator.getStatus() 
+      });
+      break;
+    
+    case 'stop':
+      simulator.stop();
+      res.json({ 
+        success: true, 
+        message: 'Simulator stopped', 
+        status: simulator.getStatus() 
+      });
+      break;
+    
+    case 'restart':
+      simulator.stop();
+      setTimeout(() => simulator.start(), 1000);
+      res.json({ 
+        success: true, 
+        message: 'Simulator restarted', 
+        status: simulator.getStatus() 
+      });
+      break;
+    
+    default:
+      res.status(400).json({
+        error: 'Invalid action',
+        message: 'Valid actions: start, stop, restart'
+      });
+  }
 });
 
-// Get recent violations
-router.get('/violations', requireSimulator, (req, res) => {
-  const simulator = getSimulator();
-  const limit = parseInt(req.query.limit) || 50;
-  const violations = simulator.getViolationLog(limit);
-  
-  res.json({
-    violations,
-    count: violations.length
-  });
-});
-
-// Control a specific vehicle
-router.post('/vehicles/:vehicleId/control', requireSimulator, (req, res) => {
+// Control specific vehicle
+router.post('/vehicles/:vehicleId/control', (req, res) => {
   const simulator = getSimulator();
   const { vehicleId } = req.params;
-  const { action, ...params } = req.body;
+  const command = req.body;
   
-  const result = simulator.controlVehicle(vehicleId, { action, ...params });
+  if (!simulator) {
+    return res.status(400).json({
+      error: 'Simulator not running',
+      message: 'Start the simulator first'
+    });
+  }
+  
+  const result = simulator.controlVehicle(vehicleId, command);
   
   if (result.success) {
     res.json(result);
@@ -78,78 +105,81 @@ router.post('/vehicles/:vehicleId/control', requireSimulator, (req, res) => {
   }
 });
 
-// Get vehicle location history
-router.get('/vehicles/:vehicleId/history', requireSimulator, (req, res) => {
+// Add new simulated vehicle
+router.post('/vehicles', (req, res) => {
   const simulator = getSimulator();
-  const { vehicleId } = req.params;
-  const limit = parseInt(req.query.limit) || 20;
+  const vehicleData = req.body;
   
-  const history = simulator.getVehicleHistory(vehicleId, limit);
+  if (!simulator) {
+    return res.status(400).json({
+      error: 'Simulator not running',
+      message: 'Start the simulator first'
+    });
+  }
   
-  res.json({
-    vehicleId,
-    history,
-    count: history.length
-  });
+  const result = simulator.addVehicle(vehicleData);
+  res.json(result);
 });
 
-// Add a new simulated vehicle
-router.post('/vehicles', requireSimulator, (req, res) => {
+// Trigger manual location update
+router.post('/update-locations', (req, res) => {
   const simulator = getSimulator();
-  const { name, type, driver, company, startLat, startLng } = req.body;
   
-  const newVehicle = {
-    id: `vehicle_${Date.now()}`,
-    name: name || `New Vehicle ${simulator.simulatedVehicles.length + 1}`,
-    deviceId: `dev_${Date.now()}`,
-    deviceToken: `sim_token_${Date.now()}`,
-    type: type || 'car',
-    status: 'idle',
-    driver: driver || 'Unknown Driver',
-    company: company || 'Test Company',
-    color: `#${Math.floor(Math.random()*16777215).toString(16)}`,
-    icon: '🚗',
-    currentLocation: {
-      lat: startLat || -1.2921,
-      lng: startLng || 36.8219,
-      speed: 0,
-      heading: 0,
-      accuracy: 10,
-      timestamp: new Date()
-    },
-    route: [
-      { lat: startLat || -1.2921, lng: startLng || 36.8219 },
-      { lat: (startLat || -1.2921) + 0.01, lng: (startLng || 36.8219) + 0.01 }
-    ],
-    routeIndex: 0,
-    speedRange: { min: 20, max: 80 },
-    violationChance: 0.1,
-    lastViolation: null,
-    isOnline: true
-  };
+  if (!simulator) {
+    return res.status(400).json({
+      error: 'Simulator not running',
+      message: 'Start the simulator first'
+    });
+  }
   
-  simulator.simulatedVehicles.push(newVehicle);
-  
-  res.json({
-    success: true,
-    vehicle: newVehicle,
-    message: 'Vehicle added to simulation'
-  });
+  simulator.sendAllLocationUpdates()
+    .then(() => {
+      res.json({
+        success: true,
+        message: 'Manual location updates sent',
+        timestamp: new Date(),
+        status: simulator.getStatus()
+      });
+    })
+    .catch(error => {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    });
 });
 
-// Toggle simulation on/off
-router.post('/toggle', requireSimulator, (req, res) => {
+// Update simulation settings
+router.put('/settings', (req, res) => {
   const simulator = getSimulator();
-  const { action } = req.body;
+  const { updateInterval } = req.body;
   
-  if (action === 'stop') {
-    simulator.stop();
-    res.json({ success: true, running: false, message: 'Simulation stopped' });
-  } else if (action === 'start') {
-    simulator.start();
-    res.json({ success: true, running: true, message: 'Simulation started' });
+  if (!simulator) {
+    return res.status(400).json({
+      error: 'Simulator not running',
+      message: 'Start the simulator first'
+    });
+  }
+  
+  if (updateInterval && updateInterval >= 1000) {
+    simulator.updateInterval = updateInterval;
+    
+    // Restart simulation with new interval
+    if (simulator.isRunning) {
+      simulator.stop();
+      setTimeout(() => simulator.start(), 1000);
+    }
+    
+    res.json({
+      success: true,
+      message: 'Settings updated',
+      updateInterval: simulator.updateInterval
+    });
   } else {
-    res.status(400).json({ error: 'Invalid action. Use "start" or "stop"' });
+    res.status(400).json({
+      error: 'Invalid updateInterval',
+      message: 'updateInterval must be at least 1000ms (1 second)'
+    });
   }
 });
 
