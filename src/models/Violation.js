@@ -26,7 +26,6 @@ const violationSchema = new mongoose.Schema({
 });
 
 
-
 // indexes
 violationSchema.index({ vehicleId: 1, timestamp: -1 });
 violationSchema.index({ timestamp: -1 });

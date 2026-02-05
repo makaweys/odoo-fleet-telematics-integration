@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-const POISchema = new mongoose.Schema({
+const poiSchema = new mongoose.Schema({
   odooCustomerId: { type: String, required: true },
   name: { type: String, required: true },
   description: String,
@@ -19,4 +19,4 @@ const POISchema = new mongoose.Schema({
 poiSchema.index({ odooCustomerId: 1 }, { unique: true });
 poiSchema.index({ location: '2dsphere' }); // For geospatial queries
 
-module.exports = mongoose.model("Poi", POISchema);
+module.exports = mongoose.model("Poi", poiSchema);

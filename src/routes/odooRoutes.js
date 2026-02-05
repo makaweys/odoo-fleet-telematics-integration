@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const odooService = require('../services/odooService');
 
+const { syncPoiFromOdooCustomer, bulkSyncPoisFromOdoo, getPoisByOdooCustomerIds} = require('../controllers/poiController');
+
 /**
  * @route POST /api/odoo/vehicles/sync
  * @desc Sync vehicle details from Odoo
