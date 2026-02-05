@@ -1,4 +1,4 @@
-// jobs/vehicleSimulator.js - Traccar-compatible vehicle simulator (API-only version)
+// jobs/vehicleSimulator.js - Fixed Traccar-compatible vehicle simulator
 const axios = require('axios');
 
 // Traccar-compatible polygon area
@@ -199,9 +199,6 @@ class TraccarSimulator {
     console.log('Server URL: ' + this.serverUrl);
   }
 
-  /**
-   * Start the simulation
-   */
   start() {
     if (this.isRunning) {
       console.log('Simulation already running');
@@ -231,9 +228,6 @@ class TraccarSimulator {
     console.log('Traccar simulation started');
   }
 
-  /**
-   * Stop the simulation
-   */
   stop() {
     if (this.simulationInterval) {
       clearInterval(this.simulationInterval);
@@ -245,9 +239,6 @@ class TraccarSimulator {
     console.log('Total requests: ' + this.requestCount + ', Errors: ' + this.errorCount);
   }
 
-  /**
-   * Send location updates for all active vehicles
-   */
   async sendAllLocationUpdates() {
     const activeVehicles = this.simulatedVehicles.filter(vehicle => vehicle.status === 'active');
     
@@ -268,9 +259,6 @@ class TraccarSimulator {
     console.log('Update results: ' + successful + ' successful, ' + failed + ' failed');
   }
 
-  /**
-   * Send location update for a single vehicle (Traccar-compatible format)
-   */
   async sendVehicleLocation(vehicle) {
     this.requestCount++;
     
@@ -278,25 +266,26 @@ class TraccarSimulator {
       // Generate realistic movement
       this.updateVehicleLocation(vehicle);
       
-      // Prepare Traccar-compatible payload
+      // Prepare CORRECT Traccar-compatible payload according to your route validation
+      // Based on the updated traccarRoutes.js validation requirements
       const payload = {
-        device_id: vehicle.deviceId,
-        location: {
-          coords: {
-            latitude: vehicle.currentLocation.lat,
-            longitude: vehicle.currentLocation.lng,
-            speed: vehicle.currentLocation.speed,
-            heading: vehicle.currentLocation.heading,
-            accuracy: vehicle.currentLocation.accuracy,
-            altitude: 1122 + Math.random() * 100
+        device_id: vehicle.deviceId,  // Required: device_id must exist
+        location: {                    // Required: location object must exist
+          coords: {                    // Required: coords object must exist
+            latitude: vehicle.currentLocation.lat,  // Required: valid latitude
+            longitude: vehicle.currentLocation.lng, // Required: valid longitude
+            speed: vehicle.currentLocation.speed || 0,  // Optional, but provided
+            heading: vehicle.currentLocation.heading || 0, // Optional, but provided
+            accuracy: vehicle.currentLocation.accuracy || 10, // Optional, but provided
+            altitude: 1122 + Math.random() * 100 // Optional
           },
           battery: {
             level: 0.2 + Math.random() * 0.6, // 20-80% battery
             is_charging: Math.random() > 0.8 // 20% chance of charging
           },
           odometer: 123456 + Math.floor(Math.random() * 1000),
-          timestamp: vehicle.currentLocation.timestamp.toISOString(),
-          is_moving: vehicle.currentLocation.speed > 5
+          is_moving: vehicle.currentLocation.speed > 5,
+          timestamp: vehicle.currentLocation.timestamp.toISOString() // Valid ISO string
         }
       };
 
@@ -304,6 +293,16 @@ class TraccarSimulator {
       if (vehicle.deviceToken) {
         payload.deviceToken = vehicle.deviceToken;
       }
+
+      // Log the payload being sent (for debugging)
+      console.log('Sending payload for ' + vehicle.name + ':', {
+        device_id: payload.device_id,
+        has_location: !!payload.location,
+        has_coords: !!payload.location.coords,
+        latitude: payload.location.coords.latitude,
+        longitude: payload.location.coords.longitude,
+        timestamp: payload.location.timestamp
+      });
 
       // Send to your server's Traccar endpoint
       const response = await axios.post(
@@ -318,7 +317,10 @@ class TraccarSimulator {
         }
       );
 
-      console.log(`Location sent for ${vehicle.name}: ${vehicle.currentLocation.lat.toFixed(6)}, ${vehicle.currentLocation.lng.toFixed(6)} | Speed: ${vehicle.currentLocation.speed} km/h | Status: ${response.status}`);
+      console.log('Location sent for ' + vehicle.name + ': ' + 
+        vehicle.currentLocation.lat.toFixed(6) + ', ' + 
+        vehicle.currentLocation.lng.toFixed(6) + ' | Speed: ' + 
+        vehicle.currentLocation.speed + ' km/h | Status: ' + response.status);
       
       return { 
         success: true, 
@@ -328,23 +330,31 @@ class TraccarSimulator {
       
     } catch (error) {
       this.errorCount++;
-      console.error(`Failed to send location for ${vehicle.name}:`, error.message);
       
       if (error.response) {
-        console.error('Server response:', error.response.status, error.response.data);
+        console.error('Failed to send location for ' + vehicle.name + ':', 
+          'Status: ' + error.response.status, 
+          'Error: ' + JSON.stringify(error.response.data));
+        
+        // Log detailed error information
+        if (error.response.data && error.response.data.details) {
+          console.error('Validation errors:', error.response.data.details);
+        }
+      } else if (error.request) {
+        console.error('Failed to send location for ' + vehicle.name + ': No response received');
+      } else {
+        console.error('Failed to send location for ' + vehicle.name + ':', error.message);
       }
       
       return { 
         success: false, 
         vehicle: vehicle.name, 
-        error: error.message 
+        error: error.message,
+        response: error.response ? error.response.data : null
       };
     }
   }
 
-  /**
-   * Update vehicle location with realistic movement
-   */
   updateVehicleLocation(vehicle) {
     const currentLocation = vehicle.currentLocation;
     const previousLocation = vehicle.previousLocation || currentLocation;
@@ -352,7 +362,7 @@ class TraccarSimulator {
     // Generate new location within polygon
     const newPoint = generateRandomPointInsidePolygon(OPERATIONAL_POLYGON);
     
-    // Calculate distance and speed
+    // Calculate distance and speed (keep it realistic)
     const distance = calculateDistance(
       previousLocation.lat,
       previousLocation.lng,
@@ -361,7 +371,7 @@ class TraccarSimulator {
     );
     
     const timeDiff = 30; // seconds between updates
-    const speed = Math.min((distance / timeDiff) * 3.6, 120); // Convert to km/h, max 120
+    const speed = Math.min((distance / timeDiff) * 3.6, 80); // Convert to km/h, max 80 (realistic)
     
     // Calculate heading
     const heading = calculateBearing(
@@ -378,29 +388,23 @@ class TraccarSimulator {
       lng: newPoint.lng,
       speed: Math.round(speed),
       heading: Math.round(heading),
-      accuracy: 5 + Math.random() * 20, // 5-25 meters accuracy
+      accuracy: 5 + Math.random() * 15, // 5-20 meters accuracy (realistic)
       timestamp: new Date()
     };
   }
 
-  /**
-   * Update random vehicle status
-   */
   updateRandomVehicleStatus() {
     this.simulatedVehicles.forEach(vehicle => {
-      // 10% chance to toggle status
-      if (Math.random() < 0.1) {
+      // 5% chance to toggle status (less frequent)
+      if (Math.random() < 0.05) {
         const newStatus = vehicle.status === 'active' ? 'inactive' : 'active';
         vehicle.status = newStatus;
         
-        console.log(`${vehicle.name} status changed to ${newStatus}`);
+        console.log(vehicle.name + ' status changed to ' + newStatus);
       }
     });
   }
 
-  /**
-   * Get simulator status
-   */
   getStatus() {
     return {
       isRunning: this.isRunning,
@@ -414,9 +418,6 @@ class TraccarSimulator {
     };
   }
 
-  /**
-   * Get simulated vehicles
-   */
   getVehicles() {
     return this.simulatedVehicles.map(vehicle => ({
       id: vehicle._id,
@@ -431,9 +432,6 @@ class TraccarSimulator {
     }));
   }
 
-  /**
-   * Manually control a vehicle
-   */
   controlVehicle(vehicleId, command) {
     const vehicle = this.simulatedVehicles.find(v => v._id === vehicleId);
     if (!vehicle) return { success: false, error: 'Vehicle not found' };
@@ -442,27 +440,29 @@ class TraccarSimulator {
       case 'set_location':
         vehicle.currentLocation.lat = command.lat;
         vehicle.currentLocation.lng = command.lng;
+        vehicle.currentLocation.timestamp = new Date();
         return { success: true, location: vehicle.currentLocation };
       
       case 'set_status':
         vehicle.status = command.status;
         return { success: true, status: vehicle.status };
       
+      case 'set_speed':
+        vehicle.currentLocation.speed = command.speed;
+        return { success: true, speed: vehicle.currentLocation.speed };
+      
       default:
         return { success: false, error: 'Unknown command' };
     }
   }
 
-  /**
-   * Add a new simulated vehicle
-   */
   addVehicle(vehicleData) {
     const newVehicle = {
-      _id: `sim_${Date.now()}`,
-      deviceId: vehicleData.deviceId || `T${(this.simulatedVehicles.length + 1).toString().padStart(3, '0')}`,
-      deviceToken: vehicleData.deviceToken || `device_token_${Date.now()}`,
-      name: vehicleData.name || `Simulated Vehicle ${this.simulatedVehicles.length + 1}`,
-      plateNumber: vehicleData.plateNumber || `SIM-${Date.now().toString().slice(-4)}`,
+      _id: 'sim_' + Date.now(),
+      deviceId: vehicleData.deviceId || 'T' + (this.simulatedVehicles.length + 1).toString().padStart(3, '0'),
+      deviceToken: vehicleData.deviceToken || 'device_token_' + Date.now(),
+      name: vehicleData.name || 'Simulated Vehicle ' + (this.simulatedVehicles.length + 1),
+      plateNumber: vehicleData.plateNumber || 'SIM-' + Date.now().toString().slice(-4),
       type: vehicleData.type || 'car',
       driver: vehicleData.driver || { name: 'Test Driver', phone: '+254700000000' },
       company: vehicleData.company || 'Test Company',
@@ -483,6 +483,56 @@ class TraccarSimulator {
       success: true,
       vehicle: newVehicle,
       message: 'Vehicle added to simulation'
+    };
+  }
+
+  // Test function to validate payload structure
+  testPayloadStructure(vehicle) {
+    const payload = {
+      device_id: vehicle.deviceId,
+      location: {
+        coords: {
+          latitude: vehicle.currentLocation.lat,
+          longitude: vehicle.currentLocation.lng,
+          speed: vehicle.currentLocation.speed || 0,
+          heading: vehicle.currentLocation.heading || 0,
+          accuracy: vehicle.currentLocation.accuracy || 10,
+          altitude: 1122
+        },
+        battery: {
+          level: 0.75,
+          is_charging: false
+        },
+        odometer: 123456,
+        is_moving: true,
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    // Validate against your route requirements
+    const validation = {
+      hasDeviceId: !!payload.device_id && typeof payload.device_id === 'string',
+      hasLocation: !!payload.location && typeof payload.location === 'object',
+      hasCoords: !!payload.location.coords && typeof payload.location.coords === 'object',
+      hasLatitude: payload.location.coords.latitude !== undefined && 
+                  typeof payload.location.coords.latitude === 'number' &&
+                  payload.location.coords.latitude >= -90 &&
+                  payload.location.coords.latitude <= 90,
+      hasLongitude: payload.location.coords.longitude !== undefined && 
+                   typeof payload.location.coords.longitude === 'number' &&
+                   payload.location.coords.longitude >= -180 &&
+                   payload.location.coords.longitude <= 180,
+      hasTimestamp: !!payload.location.timestamp && !isNaN(new Date(payload.location.timestamp).getTime())
+    };
+
+    console.log('Payload validation for ' + vehicle.name + ':', validation);
+    
+    const allValid = Object.values(validation).every(v => v === true);
+    
+    return {
+      valid: allValid,
+      validation,
+      payload
     };
   }
 }
@@ -509,9 +559,29 @@ function getSimulator() {
   return simulatorInstance;
 }
 
+// Test the payload structure
+function testSimulatorPayload() {
+  const testVehicle = {
+    deviceId: 'TEST_001',
+    name: 'Test Vehicle',
+    currentLocation: {
+      lat: -1.2921,
+      lng: 36.8219,
+      speed: 45,
+      heading: 90,
+      accuracy: 10,
+      timestamp: new Date()
+    }
+  };
+
+  const simulator = new TraccarSimulator();
+  return simulator.testPayloadStructure(testVehicle);
+}
+
 module.exports = {
   TraccarSimulator,
   startSimulator,
   stopSimulator,
-  getSimulator
+  getSimulator,
+  testSimulatorPayload
 };
