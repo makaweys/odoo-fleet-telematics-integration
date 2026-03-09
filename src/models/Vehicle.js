@@ -70,7 +70,7 @@ vehicleSchema.virtual('currentSpeed').get(function() {
 vehicleSchema.set('toJSON', { virtuals: true });
 vehicleSchema.set('toObject', { virtuals: true });
 
-vehicleSchema.index({ odooVehicleId: 1 }, { unique: true });
+
 vehicleSchema.index({ deviceId: 1 });
 vehicleSchema.index({ traccarId: 1 });
 vehicleSchema.index({ "lastLocation.timestamp": -1 });
